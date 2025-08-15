@@ -88,6 +88,7 @@ app.get("/", (req, res) => {
   res.json({ status: "Backend is running 🚀" });
 });
 
-app.listen(process.env.PORT,() => {
-  console.log(`✅ Server running at http://0.0.0.0:${process.env.PORT}`);
+const port = process.env.PORT || 8080;
+app.listen(port, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${port}`);
 });
