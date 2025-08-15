@@ -9,28 +9,21 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// Supabase client with Service Role Key
 const supabase = createClient(
   process.env.SUPABASE_URL,
   process.env.SUPABASE_SERVICE_ROLE_KEY
 );
 
+// 🛠 Update location for a bus
 app.post("/update", async (req, res) => {
-  console.log("📩 Incoming update:", req.body);
+  const { busId, password, lat, lng } = req.body;
 
-  let { busId, password, lat, lng } = req.body;
-
-  // Ensure busId is string and trim spaces
-  if (typeof busId === "number") busId = busId.toString();
-  if (typeof busId === "string") busId = busId.trim();
-
-  // Validate inputs
   if (!busId || !password || typeof lat !== "number" || typeof lng !== "number") {
     return res.status(400).json({ error: "Missing required fields!" });
   }
 
   try {
-    // 1. Check if bus exists
+    // Check bus
     const { data: bus, error: busError } = await supabase
       .from("buses")
       .select("password")
@@ -38,57 +31,60 @@ app.post("/update", async (req, res) => {
       .maybeSingle();
 
     if (busError) throw busError;
+    if (!bus) return res.status(404).json({ error: "Bus not found!" });
 
-    if (!bus) {
-      console.log(`🆕 Bus ${busId} not found — creating it...`);
-      const { error: insertBusError } = await supabase
-        .from("buses")
-        .insert({ id: busId, password });
-
-      if (insertBusError) throw insertBusError;
-    } else {
-      // Verify password
-      if (bus.password !== password) {
-        return res.status(401).json({ error: "Invalid password!" });
-      }
+    if (bus.password !== password) {
+      return res.status(401).json({ error: "Invalid password!" });
     }
 
-    // 2. Update or insert location
-    const { data: existingLocation, error: fetchError } = await supabase
+    // Update or insert location
+    const { data: existing } = await supabase
       .from("locations")
       .select("id")
       .eq("bus_id", busId)
       .maybeSingle();
 
-    if (fetchError) throw fetchError;
-
-    let updateError;
-    if (existingLocation) {
-      ({ error: updateError } = await supabase
+    let error;
+    if (existing) {
+      ({ error } = await supabase
         .from("locations")
         .update({ lat, lng, timestamp: new Date() })
         .eq("bus_id", busId));
     } else {
-      ({ error: updateError } = await supabase
+      ({ error } = await supabase
         .from("locations")
         .insert({ bus_id: busId, lat, lng, timestamp: new Date() }));
     }
 
-    if (updateError) throw updateError;
+    if (error) throw error;
 
-    console.log(`✅ Location updated for bus ${busId}`);
     res.json({ success: true, message: "Location updated" });
   } catch (err) {
-    console.error("❌ Server error:", err.message || err);
-    res.status(500).json({ error: "Internal server error!" });
+    console.error("❌ Update error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
   }
 });
 
-app.get("/", (req, res) => {
-  res.json({ status: "Backend is running 🚀" });
+// 📍 Fetch all locations
+app.get("/locations", async (req, res) => {
+  try {
+    const { data, error } = await supabase
+      .from("locations")
+      .select("bus_id, lat, lng, timestamp");
+
+    if (error) throw error;
+    res.json(data);
+  } catch (err) {
+    console.error("❌ Fetch error:", err.message);
+    res.status(500).json({ error: "Internal server error" });
+  }
 });
 
-const port = process.env.PORT || 8080;
-app.listen(port, "0.0.0.0", () => {
-  console.log(`✅ Server running on port ${port}`);
+// Health check
+app.get("/", (req, res) => {
+  res.json({ status: "Backend running 🚀" });
+});
+
+app.listen(process.env.PORT || 5000, "0.0.0.0", () => {
+  console.log(`✅ Server running on port ${process.env.PORT || 5000}`);
 });
